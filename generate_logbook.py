@@ -26,9 +26,37 @@ LOGBOOK_XLSX = 'FYN93N_ATO_Logbook.xlsx'
 PUBLIC_HOLIDAYS = [
     datetime(2026, 6, 8),   # King's Birthday
     datetime(2026, 8, 3),   # Bank Holiday
+    datetime(2026, 10, 5),  # Labour Day
+    datetime(2026, 12, 25), # Christmas Day
+    datetime(2026, 12, 26), # Boxing Day
+    datetime(2026, 12, 28), # Boxing Day (Observed)
+    datetime(2027, 1, 1),   # New Year's Day
+    datetime(2027, 1, 26),  # Australia Day
 ]
 
-# 5. 주중 추가 목적지 및 다구간 경유(Multi-stop) 경로 목록
+# 5. 주간 정기 고정 루틴 (일요일: 서점 교재 구매, 월요일: 본사 정기 방문)
+# 추가 기간이 연장될 때마다 매주 일요일과 월요일은 최우선적으로 자동 배정됩니다.
+ROUTINE_SUNDAY_TRIP = {
+    "Start location#": "Edu-Kingdom College High Street Penrith NSW Australia",
+    "End location#": "Five Senses Education Prospect Highway Seven Hills NSW Australia",
+    "Trip details": "Buying books ",
+    "Trip distance*": 30.79,
+    "Record multiple trips*": 1,
+    "Record the return journey*": "Yes",
+    "Total Km": 61.58
+}
+
+ROUTINE_MONDAY_TRIP = {
+    "Start location#": "Edu-Kingdom College High Street Penrith NSW Australia",
+    "End location#": "Edu-Kingdom College Sorrell Street Parramatta NSW Australia",
+    "Trip details": "Regular Visit to HQ",
+    "Trip distance*": 38.61,
+    "Record multiple trips*": 1,
+    "Record the return journey*": "Yes",
+    "Total Km": 77.22
+}
+
+# 6. 주중 추가 목적지 및 다구간 경유(Multi-stop) 경로 목록
 # Toll 옵션: Toll-Free (무료 도로 / Great Western Hwy 등) vs Toll Road (M4 / WestConnex / M7 유료 도로)
 # 기본적으로 Toll-Free 경로 우선(가중치 높음), 경우에 따라 Toll 경로도 선택 가능하도록 구성
 
@@ -249,50 +277,106 @@ def choose_route():
         weights.append(w)
     return random.choices(EXTRA_ROUTES, weights=weights, k=1)[0]
 
-def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, personal_budget):
-    """지정된 기간과 목표 km에 맞춰 기존 마지막 오도미터부터 이어서 Trip을 생성합니다."""
-    if needed_km <= 0 or start_date > end_date:
+def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, personal_budget, existing_dates=None):
+    """지정된 기간과 목표 km에 맞춰 기존 마지막 오도미터부터 이어서 Trip을 생성합니다.
+    1. 일요일(Five Senses 서점 교재 구매)과 월요일(Parramatta HQ 본사 정기 방문)을 최우선 기본 일정으로 자동 배정
+    2. 목표 비즈니스 주행거리(95%) 충족을 위해 남은 km는 주중(화~토)에 다구간/Toll-Free 경로 풀에서 자동 배정
+    """
+    if start_date > end_date:
         return pd.DataFrame(), last_odometer
 
-    possible_dates = []
-    current_date = start_date
-    while current_date <= end_date:
-        if current_date.weekday() not in [0, 6]:  # 월(0), 일(6) 제외 (화~토 운행)
-            if current_date not in PUBLIC_HOLIDAYS:
-                possible_dates.append(current_date)
-        current_date += timedelta(days=1)
-        
-    if not possible_dates:
-        print("⚠️ 추가 생성 가능한 영업일이 없습니다.")
-        return pd.DataFrame(), last_odometer
-
-    possible_slots = possible_dates * 2
-    random.shuffle(possible_slots)
+    if existing_dates is None:
+        existing_dates = set()
 
     new_trips = []
     accumulated_km = 0.0
 
-    while accumulated_km < needed_km and possible_slots:
-        date = possible_slots.pop()
-        route = choose_route()
-        
-        new_trips.append({
-            'Uploaded': 'Not uploaded',
-            'Type': 'Employee',
-            'Status': 'Completed',
-            'Date': date,
-            'Vehicle': 'FYN93N',
-            'Purpose of trip': 'Employee - work',
-            'Start location#': route['Start location#'],
-            'End location#': route['End location#'],
-            'Trip details': route['Trip details'],
-            'Trip distance*': route['Trip distance*'],
-            'Record multiple trips*': 1,
-            'Record the return journey*': route.get('Record the return journey*', 'Yes'),
-            'Total Km': route['Total Km'],
-            'Logbook trip': 'Y'
-        })
-        accumulated_km += route['Total Km']
+    # 1단계: 일요일(Seven Hills 서점) 및 월요일(Parramatta 본사) 정기 일정 우선 배정
+    current_date = start_date
+    available_weekdays = []  # 화~토 중 운행 가능한 평일 풀
+
+    while current_date <= end_date:
+        dt_str = current_date.strftime('%d/%m/%Y')
+        is_already_recorded = dt_str in existing_dates
+
+        if not is_already_recorded and current_date not in PUBLIC_HOLIDAYS:
+            if current_date.weekday() == 6:  # 일요일 (서점 교재 구매)
+                trip_info = ROUTINE_SUNDAY_TRIP.copy()
+                new_trips.append({
+                    'Uploaded': 'Not uploaded',
+                    'Type': 'Employee',
+                    'Status': 'Completed',
+                    'Date': current_date,
+                    'Vehicle': 'FYN93N',
+                    'Purpose of trip': 'Employee - work',
+                    'Start location#': trip_info['Start location#'],
+                    'End location#': trip_info['End location#'],
+                    'Trip details': trip_info['Trip details'],
+                    'Trip distance*': trip_info['Trip distance*'],
+                    'Record multiple trips*': 1,
+                    'Record the return journey*': trip_info['Record the return journey*'],
+                    'Total Km': trip_info['Total Km'],
+                    'Logbook trip': 'Y'
+                })
+                accumulated_km += trip_info['Total Km']
+
+            elif current_date.weekday() == 0:  # 월요일 (Parramatta HQ 본사 방문)
+                trip_info = ROUTINE_MONDAY_TRIP.copy()
+                new_trips.append({
+                    'Uploaded': 'Not uploaded',
+                    'Type': 'Employee',
+                    'Status': 'Completed',
+                    'Date': current_date,
+                    'Vehicle': 'FYN93N',
+                    'Purpose of trip': 'Employee - work',
+                    'Start location#': trip_info['Start location#'],
+                    'End location#': trip_info['End location#'],
+                    'Trip details': trip_info['Trip details'],
+                    'Trip distance*': trip_info['Trip distance*'],
+                    'Record multiple trips*': 1,
+                    'Record the return journey*': trip_info['Record the return journey*'],
+                    'Total Km': trip_info['Total Km'],
+                    'Logbook trip': 'Y'
+                })
+                accumulated_km += trip_info['Total Km']
+
+            elif current_date.weekday() in [1, 2, 3, 4, 5]:  # 화, 수, 목, 금, 토
+                available_weekdays.append(current_date)
+
+        current_date += timedelta(days=1)
+
+    print(f" - [정기 일정 우선 배정] 일요일 서점 / 월요일 본사 정기 일정 {len(new_trips)}건 (+{accumulated_km:.2f} km) 기본 등록")
+
+    # 2단계: 목표 비즈니스 주행거리(needed_km) 도달을 위해 남은 거리 화~토요일에 배정
+    if accumulated_km < needed_km and available_weekdays:
+        possible_slots = available_weekdays * 2
+        random.shuffle(possible_slots)
+
+        weekday_trips_added = 0
+        while accumulated_km < needed_km and possible_slots:
+            slot_date = possible_slots.pop()
+            route = choose_route()
+
+            new_trips.append({
+                'Uploaded': 'Not uploaded',
+                'Type': 'Employee',
+                'Status': 'Completed',
+                'Date': slot_date,
+                'Vehicle': 'FYN93N',
+                'Purpose of trip': 'Employee - work',
+                'Start location#': route['Start location#'],
+                'End location#': route['End location#'],
+                'Trip details': route['Trip details'],
+                'Trip distance*': route['Trip distance*'],
+                'Record multiple trips*': 1,
+                'Record the return journey*': route.get('Record the return journey*', 'Yes'),
+                'Total Km': route['Total Km'],
+                'Logbook trip': 'Y'
+            })
+            accumulated_km += route['Total Km']
+            weekday_trips_added += 1
+
+        print(f" - [주중 추가 운행 배정] 목표 달성을 위해 다구간/Toll-Free 경로 {weekday_trips_added}건 추가 반영")
 
     if not new_trips:
         return pd.DataFrame(), last_odometer
@@ -300,16 +384,20 @@ def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, p
     new_df = pd.DataFrame(new_trips)
     new_df = new_df.sort_values(by='Date').reset_index(drop=True)
 
+    # 3단계: 오도미터 연속성 및 개인 용도(personal) 간격 배분
+    actual_new_km = new_df['Total Km'].sum()
+    actual_personal_budget = max(0.0, personal_budget - max(0.0, actual_new_km - needed_km))
+
     current_odo = float(last_odometer)
     start_odos = []
     end_odos = []
 
     for _, row in new_df.iterrows():
-        if personal_budget > 0 and random.random() > 0.6:
-            gap = min(personal_budget, random.uniform(5, 20))
+        if actual_personal_budget > 2 and random.random() > 0.5:
+            gap = min(actual_personal_budget, round(random.uniform(3, 15), 1))
             current_odo += gap
-            personal_budget -= gap
-            
+            actual_personal_budget -= gap
+
         start_odos.append(round(current_odo))
         current_odo += row['Total Km']
         end_odos.append(round(current_odo))
@@ -342,27 +430,31 @@ def main():
 
         needed_km = target_business_km - existing_business_km
         next_start_date = last_date + timedelta(days=1)
-        
-        if needed_km <= 0:
-            print(f"\n🎉 이미 목표 비즈니스 주행거리({target_business_km:.2f}km)를 달성하였습니다. 추가 생성이 불필요합니다.")
-            final_df = existing_df
-        elif next_start_date > END_DATE:
+
+        if next_start_date > END_DATE:
             print(f"\n⚠️ 종료 날짜({END_DATE.strftime('%d/%m/%Y')})가 기존 마지막 기록일({last_date.strftime('%d/%m/%Y')}) 이전이거나 같습니다.")
             print("   새로운 운행 기간을 생성하려면 END_DATE를 늘려주세요.")
+            final_df = existing_df
+        elif needed_km <= 0:
+            print(f"\n🎉 이미 목표 비즈니스 주행거리({target_business_km:.2f}km)를 달성하였습니다. 추가 생성이 불필요합니다.")
+            print("   추가 주행거리를 반영하려면 TOTAL_MILEAGE 값을 늘려주세요.")
             final_df = existing_df
         else:
             print(f"\n🚀 [증분 생성 시작] 기간: {next_start_date.strftime('%d/%m/%Y')} ~ {END_DATE.strftime('%d/%m/%Y')}")
             print(f" - 추가 필요 비즈니스 주행거리: {needed_km:.2f} km")
-            
+
             remaining_total_km = max(0, TOTAL_MILEAGE - last_end_odo)
             personal_budget = max(0, remaining_total_km - needed_km)
+
+            existing_dates_set = set(existing_df['Date'].dropna().astype(str).tolist())
 
             new_df, final_odo = generate_incremental_trips(
                 start_date=next_start_date,
                 end_date=END_DATE,
                 needed_km=needed_km,
                 last_odometer=last_end_odo,
-                personal_budget=personal_budget
+                personal_budget=personal_budget,
+                existing_dates=existing_dates_set
             )
 
             print(f" - 신규 생성된 추가 Trip 수: {len(new_df)}건 (+{new_df['Total Km'].sum():.2f} km)")
@@ -373,14 +465,19 @@ def main():
         base_df = load_and_clean_base_data(BASE_EXPENSE_FILE)
         current_km = base_df['Total Km'].sum() if not base_df.empty else 0.0
         needed_km = target_business_km - current_km
-        
+
         personal_budget = TOTAL_MILEAGE - target_business_km
+        existing_dates_set = set()
+        if not base_df.empty:
+            existing_dates_set = set(base_df['Date'].dt.strftime('%d/%m/%Y').tolist())
+
         new_df, _ = generate_incremental_trips(
             start_date=INITIAL_START_DATE,
             end_date=END_DATE,
             needed_km=needed_km,
             last_odometer=INITIAL_START_ODOMETER,
-            personal_budget=personal_budget
+            personal_budget=personal_budget,
+            existing_dates=existing_dates_set
         )
         
         if not base_df.empty:
