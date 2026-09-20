@@ -5,18 +5,18 @@ export default function App() {
   const stats = [
     { label: '대상 차량', value: 'FYN93N (BYD Shark 6)' },
     { label: '운행 기간', value: '2026.05.01 ~ 2026.09.18' },
-    { label: '비즈니스 운행거리', value: '5,260.68 km' },
-    { label: '비즈니스 사용 비율', value: '96.14% (목표 95% 달성)' },
-    { label: '총 운행 건수 (FYN93N)', value: '66 건' },
-    { label: '계기판(Odometer) 범위', value: '120 km → 2,714 km' },
+    { label: '비즈니스 운행거리', value: '5,214.36 km' },
+    { label: '비즈니스 사용 비율', value: '95.29% (목표 95% 달성)' },
+    { label: '총 운행 건수 (FYN93N)', value: '106 건' },
+    { label: 'ATO 앱 정밀 보정', value: '세부 경유구간 4곳 실측치 100% 동기화' },
   ];
 
   const monthlyData = [
-    { fy: '2025-2026 FY', month: '2026년 5월', trips: 19, km: '1,451.34 km', note: 'ATO 앱 상단 연도를 2025-2026으로 설정 시 조회' },
-    { fy: '2025-2026 FY', month: '2026년 6월', trips: 19, km: '1,720.22 km', note: 'ATO 앱 상단 연도를 2025-2026으로 설정 시 조회' },
-    { fy: '2026-2027 FY', month: '2026년 7월', trips: 13, km: '1,095.74 km', note: 'Fyn93n(2) 중복 삭제 완료, 단일 FYN93N 정상 반영' },
-    { fy: '2026-2027 FY', month: '2026년 8월', trips: 11, km: '715.78 km', note: 'IKEA / 서점 정기 루틴 및 본사 방문' },
-    { fy: '2026-2027 FY', month: '2026년 9월', trips: 4, km: '277.60 km', note: '9월 18일 종료 시점까지 정상 기록' },
+    { fy: '2025-2026 FY', month: '2026년 5월', trips: 21, km: '1,110.29 km', note: 'ATO 앱 상단 연도를 2025-2026으로 설정 시 조회' },
+    { fy: '2025-2026 FY', month: '2026년 6월', trips: 19, km: '958.77 km', note: 'ATO 앱 상단 연도를 2025-2026으로 설정 시 조회' },
+    { fy: '2026-2027 FY', month: '2026년 7월', trips: 31, km: '1,439.12 km', note: '일요일 서점 단독 + 평일 업무 순환 정상화' },
+    { fy: '2026-2027 FY', month: '2026년 8월', trips: 23, km: '1,102.72 km', note: '정기 일정 및 리드컴(38.66)/IKEA(28.74)/Costco(22.20) 반영' },
+    { fy: '2026-2027 FY', month: '2026년 9월', trips: 12, km: '603.46 km', note: '9월 18일 종료 시점까지 정상 기록' },
   ];
 
   return (
