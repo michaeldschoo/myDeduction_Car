@@ -1,44 +1,104 @@
 import os
 import csv
+import json
 import random
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 
 # ==============================================================================
-# [설정 영역] 추후 데이터 생성 시 아래 값들만 수정하세요!
+# [설정 로더] config.json이 있으면 우선 로드하고, 없을 경우 아래 기본값들을 사용합니다.
 # ==============================================================================
+CONFIG_FILE = 'config.json'
+
+def load_app_config(config_path=CONFIG_FILE):
+    """config.json 파일에서 설정을 안전하게 읽어오며, 오류 시 친절한 안내를 제공합니다."""
+    default_config = {
+        "vehicle": {
+            "rego": "FYN93N",
+            "initial_start_odometer": 120,
+            "initial_start_date": "2026-05-01",
+            "default_home_base": "Edu-Kingdom College High Street Penrith NSW Australia"
+        },
+        "simulation": {
+            "target_percentage": 0.95,
+            "total_mileage": 5472,
+            "end_date": "2026-09-18",
+            "force_full_regen": True,
+            "prefer_toll_free": True,
+            "multi_stop_probability": 0.60
+        },
+        "selective_regen": {
+            "enabled": True,
+            "start_date": "2026-07-01",
+            "end_date": "2026-07-31"
+        },
+        "files": {
+            "base_expense_file": "myDeductionExpenses.csv",
+            "logbook_csv": "FYN93N_ATO_Logbook.csv",
+            "logbook_xlsx": "FYN93N_ATO_Logbook.xlsx"
+        },
+        "public_holidays": [
+            "2026-06-08",
+            "2026-08-03",
+            "2026-10-05",
+            "2026-12-25",
+            "2026-12-26",
+            "2026-12-28",
+            "2027-01-01",
+            "2027-01-26"
+        ]
+    }
+    
+    if not os.path.exists(config_path):
+        print(f"ℹ️ 설정 파일({config_path})이 없어 기본 내장 설정을 사용합니다.")
+        return default_config
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            user_config = json.load(f)
+            # 딕셔너리 재귀 병합
+            for sec, vals in user_config.items():
+                if isinstance(vals, dict) and sec in default_config:
+                    default_config[sec].update(vals)
+                else:
+                    default_config[sec] = vals
+            print(f"⚙️ 설정 파일({config_path})을 성공적으로 로드했습니다.")
+            return default_config
+    except Exception as e:
+        print(f"⚠️ 설정 파일({config_path}) 파싱 중 오류 발생 ({e}). 기본 설정을 사용합니다.")
+        return default_config
+
+# 설정 적용
+CONFIG = load_app_config()
+
 # 1. 목표치 및 총 주행거리 설정
-TARGET_PERCENTAGE = 0.95            # 비즈니스 사용 비율 (95% -> 0.95)
-TOTAL_MILEAGE = 5472                # 현재 차량의 총 누적 주행거리 (추가 주행 발생 시 이 값을 증가)
-FORCE_FULL_REGEN = True             # True: 기존 CSV를 무시하고 실제 odometer 기준으로 처음부터 재생성
+TARGET_PERCENTAGE = float(CONFIG['simulation'].get('target_percentage', 0.95))
+TOTAL_MILEAGE = float(CONFIG['simulation'].get('total_mileage', 5472))
+FORCE_FULL_REGEN = bool(CONFIG['simulation'].get('force_full_regen', True))
+PREFER_TOLL_FREE = bool(CONFIG['simulation'].get('prefer_toll_free', True))
+MULTI_STOP_PROBABILITY = float(CONFIG['simulation'].get('multi_stop_probability', 0.60))
 
-# 2. 시작 계기판 숫자 및 날짜 범위 설정
-INITIAL_START_ODOMETER = 120        # 최초 시작 계기판 숫자 (기존 로그북이 없을 때만 사용)
-INITIAL_START_DATE = datetime(2026, 5, 1)  # 최초 기록 시작 날짜
-END_DATE = datetime(2026, 9, 18)   # 기록 종료 날짜 (추가 기간 설정 시 수정)
+# 2. 차량 및 시작/종료 설정
+VEHICLE_REGO = str(CONFIG['vehicle'].get('rego', 'FYN93N'))
+INITIAL_START_ODOMETER = float(CONFIG['vehicle'].get('initial_start_odometer', 120))
+INITIAL_START_DATE = datetime.strptime(CONFIG['vehicle'].get('initial_start_date', '2026-05-01'), '%Y-%m-%d')
+END_DATE = datetime.strptime(CONFIG['simulation'].get('end_date', '2026-09-18'), '%Y-%m-%d')
 
-# 2-1. 특정 날짜 범위만 다시 생성할 때 사용하는 설정
-# True로 바꾸고 아래 두 값을 지정하면 전체 범위 대신 해당 기간만 재생성합니다.
-SELECTIVE_DATE_REGEN = True
-REGEN_START_DATE = datetime(2026, 7, 1)
-REGEN_END_DATE = datetime(2026, 7, 31)
+# 2-1. 특정 날짜 범위 재생성 설정
+SELECTIVE_DATE_REGEN = bool(CONFIG['selective_regen'].get('enabled', False))
+REGEN_START_DATE = datetime.strptime(CONFIG['selective_regen'].get('start_date', '2026-07-01'), '%Y-%m-%d')
+REGEN_END_DATE = datetime.strptime(CONFIG['selective_regen'].get('end_date', '2026-07-31'), '%Y-%m-%d')
 
 # 3. 파일 경로
-BASE_EXPENSE_FILE = 'myDeductionExpenses.csv'
-LOGBOOK_CSV = 'FYN93N_ATO_Logbook.csv'
-LOGBOOK_XLSX = 'FYN93N_ATO_Logbook.xlsx'
+BASE_EXPENSE_FILE = CONFIG['files'].get('base_expense_file', 'myDeductionExpenses.csv')
+LOGBOOK_CSV = CONFIG['files'].get('logbook_csv', f'{VEHICLE_REGO}_ATO_Logbook.csv')
+LOGBOOK_XLSX = CONFIG['files'].get('logbook_xlsx', f'{VEHICLE_REGO}_ATO_Logbook.xlsx')
 
 # 4. 공휴일 설정 (제외할 날짜)
 PUBLIC_HOLIDAYS = [
-    datetime(2026, 6, 8),   # King's Birthday
-    datetime(2026, 8, 3),   # Bank Holiday
-    datetime(2026, 10, 5),  # Labour Day
-    datetime(2026, 12, 25), # Christmas Day
-    datetime(2026, 12, 26), # Boxing Day
-    datetime(2026, 12, 28), # Boxing Day (Observed)
-    datetime(2027, 1, 1),   # New Year's Day
-    datetime(2027, 1, 26),  # Australia Day
+    datetime.strptime(h, '%Y-%m-%d') if isinstance(h, str) else h
+    for h in CONFIG.get('public_holidays', [])
 ]
 
 # 5. 주간 정기 고정 루틴 (일요일: 서점 교재 구매, 월요일: 본사 정기 방문)
@@ -304,7 +364,7 @@ def load_and_clean_base_data(file_path, start_date=None, end_date=None):
     effective_end = end_date or END_DATE
     mask = (df['Date'] >= effective_start) & (df['Date'] <= effective_end)
     df = df[mask].copy()
-    df['Vehicle'] = 'FYN93N'
+    df['Vehicle'] = VEHICLE_REGO
     df = df.drop_duplicates(subset=['Date', 'End location#', 'Total Km'])
     return df
 
@@ -315,7 +375,7 @@ def make_trip_row(date, route, start_location, end_location, trip_details, trip_
         'Type': 'Employee',
         'Status': 'Completed',
         'Date': date,
-        'Vehicle': 'FYN93N',
+        'Vehicle': VEHICLE_REGO,
         'Purpose of trip': 'Employee - work',
         'Start location#': start_location,
         'End location#': end_location,
@@ -519,7 +579,7 @@ def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, p
                     'Type': 'Employee',
                     'Status': 'Completed',
                     'Date': current_date,
-                    'Vehicle': 'FYN93N',
+                    'Vehicle': VEHICLE_REGO,
                     'Purpose of trip': 'Employee - work',
                     'Start location#': trip_info['Start location#'],
                     'End location#': trip_info['End location#'],
@@ -539,7 +599,7 @@ def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, p
                     'Type': 'Employee',
                     'Status': 'Completed',
                     'Date': current_date,
-                    'Vehicle': 'FYN93N',
+                    'Vehicle': VEHICLE_REGO,
                     'Purpose of trip': 'Employee - work',
                     'Start location#': trip_info['Start location#'],
                     'End location#': trip_info['End location#'],

@@ -1,11 +1,22 @@
-import csv, io
+import csv, io, os, json
 from datetime import datetime
 
 # --------------------------------------------------------------
-# 파일 경로 (필요에 따라 수정)
-ORIGINAL_FILE = 'myDeductionExpenses.csv'          # 백업 파일
-GENERATED_FILE = 'FYN93N_ATO_Logbook.csv'          # 방금 만든 로그북
-OUTPUT_FILE = 'myDeductionExpenses_ReadyToImport.csv'  # 최종 병합 결과
+# 설정 로더 (config.json 우선 참조)
+CONFIG_FILE = 'config.json'
+ORIGINAL_FILE = 'myDeductionExpenses.csv'
+GENERATED_FILE = 'FYN93N_ATO_Logbook.csv'
+OUTPUT_FILE = 'myDeductionExpenses_ReadyToImport.csv'
+
+if os.path.exists(CONFIG_FILE):
+    try:
+        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+            files_cfg = cfg.get('files', {})
+            ORIGINAL_FILE = files_cfg.get('base_expense_file', ORIGINAL_FILE)
+            GENERATED_FILE = files_cfg.get('logbook_csv', GENERATED_FILE)
+    except Exception as e:
+        print(f"⚠️ {CONFIG_FILE} 로드 중 오류: {e}")
 
 # --------------------------------------------------------------
 def _parse_date(s: str):

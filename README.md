@@ -3,13 +3,37 @@
 ## 프로젝트 목적
 이 프로젝트는 차량 운행일지를 생성하고, myDeductions 앱에 적합한 CSV/Excel 형식으로 정리하는 도구입니다.
 
-## 현재 설정값
-- TARGET_PERCENTAGE = 0.95
-- TOTAL_MILEAGE = 5472
-- INITIAL_START_ODOMETER = 120
-- INITIAL_START_DATE = 2026-05-01
-- END_DATE = 2026-09-18
-- FORCE_FULL_REGEN = True
+## 현재 설정값 (config.json)
+모든 주요 설정값은 `config.json`에서 통합 관리되며, 파이썬 코드를 직접 수정하지 않고도 설정 파일에서 직관적으로 변경할 수 있습니다:
+
+```json
+{
+  "vehicle": {
+    "rego": "FYN93N",
+    "initial_start_odometer": 120,
+    "initial_start_date": "2026-05-01",
+    "default_home_base": "Edu-Kingdom College High Street Penrith NSW Australia"
+  },
+  "simulation": {
+    "target_percentage": 0.95,
+    "total_mileage": 5472,
+    "end_date": "2026-09-18",
+    "force_full_regen": true,
+    "prefer_toll_free": true,
+    "multi_stop_probability": 0.60
+  },
+  "selective_regen": {
+    "enabled": true,
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31"
+  },
+  "files": {
+    "base_expense_file": "myDeductionExpenses.csv",
+    "logbook_csv": "FYN93N_ATO_Logbook.csv",
+    "logbook_xlsx": "FYN93N_ATO_Logbook.xlsx"
+  }
+}
+```
 
 ## 핵심 수정 내용
 ### 1. 경로 분할 로직

@@ -1,0 +1,36 @@
+{
+  "vehicle": {
+    "rego": "FYN93N",
+    "initial_start_odometer": 120,
+    "initial_start_date": "2026-05-01",
+    "default_home_base": "Edu-Kingdom College High Street Penrith NSW Australia"
+  },
+  "simulation": {
+    "target_percentage": 0.95,
+    "total_mileage": 5472,
+    "end_date": "2026-09-18",
+    "force_full_regen": true,
+    "prefer_toll_free": true,
+    "multi_stop_probability": 0.60
+  },
+  "selective_regen": {
+    "enabled": true,
+    "start_date": "2026-07-01",
+    "end_date": "2026-07-31"
+  },
+  "files": {
+    "base_expense_file": "myDeductionExpenses.csv",
+    "logbook_csv": "FYN93N_ATO_Logbook.csv",
+    "logbook_xlsx": "FYN93N_ATO_Logbook.xlsx"
+  },
+  "public_holidays": [
+    "2026-06-08",
+    "2026-08-03",
+    "2026-10-05",
+    "2026-12-25",
+    "2026-12-26",
+    "2026-12-28",
+    "2027-01-01",
+    "2027-01-26"
+  ]
+}
