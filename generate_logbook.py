@@ -10,12 +10,19 @@ import numpy as np
 # ==============================================================================
 # 1. 목표치 및 총 주행거리 설정
 TARGET_PERCENTAGE = 0.95            # 비즈니스 사용 비율 (95% -> 0.95)
-TOTAL_MILEAGE = 4425                # 현재 차량의 총 누적 주행거리 (추가 주행 발생 시 이 값을 증가)
+TOTAL_MILEAGE = 5472                # 현재 차량의 총 누적 주행거리 (추가 주행 발생 시 이 값을 증가)
+FORCE_FULL_REGEN = True             # True: 기존 CSV를 무시하고 실제 odometer 기준으로 처음부터 재생성
 
 # 2. 시작 계기판 숫자 및 날짜 범위 설정
 INITIAL_START_ODOMETER = 120        # 최초 시작 계기판 숫자 (기존 로그북이 없을 때만 사용)
 INITIAL_START_DATE = datetime(2026, 5, 1)  # 최초 기록 시작 날짜
-END_DATE = datetime(2026, 8, 24)   # 기록 종료 날짜 (추가 기간 설정 시 수정)
+END_DATE = datetime(2026, 9, 18)   # 기록 종료 날짜 (추가 기간 설정 시 수정)
+
+# 2-1. 특정 날짜 범위만 다시 생성할 때 사용하는 설정
+# True로 바꾸고 아래 두 값을 지정하면 전체 범위 대신 해당 기간만 재생성합니다.
+SELECTIVE_DATE_REGEN = True
+REGEN_START_DATE = datetime(2026, 7, 1)
+REGEN_END_DATE = datetime(2026, 7, 31)
 
 # 3. 파일 경로
 BASE_EXPENSE_FILE = 'myDeductionExpenses.csv'
@@ -61,6 +68,7 @@ ROUTINE_MONDAY_TRIP = {
 # 기본적으로 Toll-Free 경로 우선(가중치 높음), 경우에 따라 Toll 경로도 선택 가능하도록 구성
 
 PREFER_TOLL_FREE = True  # True: 무료도로 우선 배정 (약 75% 확률), False: 유료/무료 균등
+MULTI_STOP_PROBABILITY = 0.60  # 주중 추가 운행 중 다중 경로를 선택할 확률
 
 EXTRA_ROUTES = [
     # -------------------------------------------------------------
@@ -201,6 +209,30 @@ EXTRA_ROUTES = [
         "Record the return journey*": "Yes",
         "Total Km": 85.00,
         "Weight": 3
+    },
+    {
+        "Type": "Multi-Stop Circuit",
+        "Route Name": "Penrith -> Parramatta HQ -> Costco Marsden Park -> Penrith (Toll-Free)",
+        "Is Toll": False,
+        "Start location#": "Edu-Kingdom College High Street Penrith NSW Australia",
+        "End location#": "Costco Wholesale Marsden Park, Richmond Road, Marsden Park NSW Australia (via Parramatta HQ)",
+        "Trip details": "Attended Parramatta HQ meeting, stopped at Costco Marsden Park for business supplies, returned to Penrith (Toll-Free)",
+        "Trip distance*": 39.50,
+        "Record the return journey*": "Yes",
+        "Total Km": 79.00,
+        "Weight": 3
+    },
+    {
+        "Type": "Multi-Stop Circuit",
+        "Route Name": "Penrith -> Parramatta HQ -> Costco Marsden Park -> Penrith (Toll Route)",
+        "Is Toll": True,
+        "Start location#": "Edu-Kingdom College High Street Penrith NSW Australia",
+        "End location#": "Costco Wholesale Marsden Park, Richmond Road, Marsden Park NSW Australia (via Parramatta HQ)",
+        "Trip details": "Attended Parramatta HQ meeting, stopped at Costco Marsden Park for urgent business supplies, returned via M4 and M7",
+        "Trip distance*": 38.20,
+        "Record the return journey*": "Yes",
+        "Total Km": 76.40,
+        "Weight": 1
     }
 ]
 # ==============================================================================
@@ -231,7 +263,18 @@ def load_existing_logbook(file_path):
         print(f"기존 로그북 로드 중 오류: {e}")
         return None
 
-def load_and_clean_base_data(file_path):
+def get_generation_window():
+    """전체 생성기간 또는 선택된 재생성 기간을 반환합니다."""
+    if SELECTIVE_DATE_REGEN:
+        start_date = REGEN_START_DATE
+        end_date = REGEN_END_DATE
+        if start_date > end_date:
+            raise ValueError(f"재생성 시작일({start_date})이 종료일({end_date})보다 늦습니다.")
+        return start_date, end_date
+    return INITIAL_START_DATE, END_DATE
+
+
+def load_and_clean_base_data(file_path, start_date=None, end_date=None):
     """최초 생성 시 myDeductionExpenses.csv 파일에서 기본 데이터를 추출합니다."""
     if not os.path.exists(file_path):
         return pd.DataFrame()
@@ -256,17 +299,186 @@ def load_and_clean_base_data(file_path):
     df = pd.read_csv(io.StringIO(csv_data), index_col=False, on_bad_lines='skip', quoting=csv.QUOTE_MINIMAL)
     df['Date'] = pd.to_datetime(df['Date'], format='%d/%m/%Y', errors='coerce')
     df = df.dropna(subset=['Date'])
-    
-    mask = (df['Date'] >= INITIAL_START_DATE) & (df['Date'] <= END_DATE)
+
+    effective_start = start_date or INITIAL_START_DATE
+    effective_end = end_date or END_DATE
+    mask = (df['Date'] >= effective_start) & (df['Date'] <= effective_end)
     df = df[mask].copy()
     df['Vehicle'] = 'FYN93N'
     df = df.drop_duplicates(subset=['Date', 'End location#', 'Total Km'])
     return df
 
+def make_trip_row(date, route, start_location, end_location, trip_details, trip_distance, total_km):
+    """기존 포맷에 맞는 단일 trip row를 생성합니다."""
+    return {
+        'Uploaded': 'Not uploaded',
+        'Type': 'Employee',
+        'Status': 'Completed',
+        'Date': date,
+        'Vehicle': 'FYN93N',
+        'Purpose of trip': 'Employee - work',
+        'Start location#': start_location,
+        'End location#': end_location,
+        'Trip details': trip_details,
+        'Trip distance*': trip_distance,
+        'Record multiple trips*': 1,
+        'Record the return journey*': 'Yes',
+        'Total Km': total_km,
+        'Logbook trip': 'Y'
+    }
+
+
+def expand_route_segments(route, date):
+    """다중 경유 경로를 실제 경로별 segment로 분해해 여러 trip row를 생성합니다."""
+    end_location = route.get('End location#', '')
+    start_location = route.get('Start location#', '')
+
+    if 'Ikea' in end_location or 'IKEA' in end_location:
+        return [
+            make_trip_row(
+                date,
+                route,
+                start_location,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Visit Parramatta HQ before IKEA Marsden Park trip',
+                38.61,
+                77.22,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Ikea Marsden Park, Hollinsworth, Marsden Park NSW, Australia',
+                'Travel from Parramatta HQ to IKEA Marsden Park',
+                22.62,
+                45.24,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Ikea Marsden Park, Hollinsworth, Marsden Park NSW, Australia',
+                start_location,
+                'Return from IKEA Marsden Park to Penrith',
+                22.62,
+                45.24,
+            ),
+        ]
+
+    if 'KMall09' in end_location or 'Lidcombe' in end_location:
+        return [
+            make_trip_row(
+                date,
+                route,
+                start_location,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Visit Parramatta HQ before Lidcombe shopping trip',
+                38.61,
+                77.22,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'KMall09 Lidcombe Shopping Centre, Parramatta Road, Lidcombe NSW, Australia',
+                'Travel from Parramatta HQ to KMall09 Lidcombe',
+                39.40,
+                78.80,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'KMall09 Lidcombe Shopping Centre, Parramatta Road, Lidcombe NSW, Australia',
+                start_location,
+                'Return from KMall09 Lidcombe to Penrith',
+                39.40,
+                78.80,
+            ),
+        ]
+
+    if 'Costco' in end_location or 'Marsden Park' in end_location and 'Costco' in route.get('Trip details', ''):
+        return [
+            make_trip_row(
+                date,
+                route,
+                start_location,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Visit Parramatta HQ before Costco stop',
+                38.61,
+                77.22,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Costco Wholesale Marsden Park, Richmond Road, Marsden Park NSW Australia',
+                'Travel from Parramatta HQ to Costco Marsden Park',
+                39.50,
+                79.00,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Costco Wholesale Marsden Park, Richmond Road, Marsden Park NSW Australia',
+                start_location,
+                'Return from Costco Marsden Park to Penrith',
+                39.50,
+                79.00,
+            ),
+        ]
+
+    if 'Seven Hills' in end_location or 'Five Senses' in end_location:
+        return [
+            make_trip_row(
+                date,
+                route,
+                start_location,
+                'Five Senses Education Prospect Highway Seven Hills NSW Australia',
+                'Visit Five Senses Education before reporting to HQ',
+                30.79,
+                61.58,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Five Senses Education Prospect Highway Seven Hills NSW Australia',
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                'Travel from Seven Hills to Parramatta HQ',
+                38.61,
+                77.22,
+            ),
+            make_trip_row(
+                date,
+                route,
+                'Edu-Kingdom College Sorrell Street Parramatta NSW Australia',
+                start_location,
+                'Return from Parramatta HQ to Penrith',
+                38.61,
+                77.22,
+            ),
+        ]
+
+    return [
+        make_trip_row(
+            date,
+            route,
+            route.get('Start location#', start_location),
+            route.get('End location#', end_location),
+            route.get('Trip details', 'Business trip'),
+            float(route.get('Trip distance*', 0.0)),
+            float(route.get('Total Km', 0.0)),
+        )
+    ]
+
+
 def choose_route():
-    """가중치 및 Toll-Free 선호도에 따라 경로를 선택합니다."""
+    """다중 경로와 Toll-Free 선호도를 반영해 경로를 선택합니다."""
+    prefer_multi_stop = random.random() < MULTI_STOP_PROBABILITY
+    route_pool = [
+        route for route in EXTRA_ROUTES
+        if (route.get('Type') == 'Multi-Stop Circuit') == prefer_multi_stop
+    ]
     weights = []
-    for route in EXTRA_ROUTES:
+    for route in route_pool:
         w = route.get('Weight', 1)
         if PREFER_TOLL_FREE:
             # 무료 도로 선호 시: 무료도로 가중치는 유지, 유료도로 가중치는 감소
@@ -275,7 +487,7 @@ def choose_route():
             else:
                 w = w * 2
         weights.append(w)
-    return random.choices(EXTRA_ROUTES, weights=weights, k=1)[0]
+    return random.choices(route_pool, weights=weights, k=1)[0]
 
 def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, personal_budget, existing_dates=None):
     """지정된 기간과 목표 km에 맞춰 기존 마지막 오도미터부터 이어서 Trip을 생성합니다.
@@ -350,31 +562,21 @@ def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, p
     # 2단계: 목표 비즈니스 주행거리(needed_km) 도달을 위해 남은 거리 화~토요일에 배정
     if accumulated_km < needed_km and available_weekdays:
         possible_slots = available_weekdays * 2
+        if start_date in possible_slots:
+            possible_slots.remove(start_date)
         random.shuffle(possible_slots)
+        possible_slots.append(start_date)
 
         weekday_trips_added = 0
         while accumulated_km < needed_km and possible_slots:
             slot_date = possible_slots.pop()
             route = choose_route()
 
-            new_trips.append({
-                'Uploaded': 'Not uploaded',
-                'Type': 'Employee',
-                'Status': 'Completed',
-                'Date': slot_date,
-                'Vehicle': 'FYN93N',
-                'Purpose of trip': 'Employee - work',
-                'Start location#': route['Start location#'],
-                'End location#': route['End location#'],
-                'Trip details': route['Trip details'],
-                'Trip distance*': route['Trip distance*'],
-                'Record multiple trips*': 1,
-                'Record the return journey*': route.get('Record the return journey*', 'Yes'),
-                'Total Km': route['Total Km'],
-                'Logbook trip': 'Y'
-            })
-            accumulated_km += route['Total Km']
-            weekday_trips_added += 1
+            route_rows = expand_route_segments(route, slot_date)
+            for segment in route_rows:
+                new_trips.append(segment)
+                accumulated_km += float(segment['Total Km'])
+            weekday_trips_added += len(route_rows)
 
         print(f" - [주중 추가 운행 배정] 목표 달성을 위해 다구간/Toll-Free 경로 {weekday_trips_added}건 추가 반영")
 
@@ -405,18 +607,61 @@ def generate_incremental_trips(start_date, end_date, needed_km, last_odometer, p
     new_df['Start odometer*'] = start_odos
     new_df['End odometer*'] = end_odos
     new_df['Date'] = new_df['Date'].apply(lambda d: d.strftime('%d/%m/%Y'))
+    new_df = new_df.sort_values(by=['Date', 'Start odometer*', 'End odometer*'], kind='mergesort').reset_index(drop=True)
 
     return new_df, current_odo
 
 def main():
     target_business_km = TOTAL_MILEAGE * TARGET_PERCENTAGE
+    regen_start, regen_end = get_generation_window()
+
     print("=" * 65)
     print(f"📊 차량 운행일지 로그북 처리기 (총 주행거리: {TOTAL_MILEAGE}km, 목표: {target_business_km:.2f}km)")
+    if SELECTIVE_DATE_REGEN:
+        print(f"📅 선택 재생성 모드 활성화: {regen_start.strftime('%d/%m/%Y')} ~ {regen_end.strftime('%d/%m/%Y')}")
     print("=" * 65)
 
-    existing_df = load_existing_logbook(LOGBOOK_CSV)
+    existing_df = None if FORCE_FULL_REGEN else load_existing_logbook(LOGBOOK_CSV)
 
-    if existing_df is not None and not existing_df.empty:
+    if FORCE_FULL_REGEN:
+        print(f"⚠️ 강제 전체 재생성 모드: 기존 {LOGBOOK_CSV}를 무시하고 실제 odometer 기준으로 처음부터 생성합니다.")
+        existing_df = None
+
+    if SELECTIVE_DATE_REGEN:
+        print("ℹ️ 특정 날짜 범위만 다시 생성합니다. 선택한 기간 외의 데이터는 유지하고, 해당 기간만 재생성합니다.")
+        if FORCE_FULL_REGEN:
+            print("   - 강제 전체 재생성 플래그는 범위 재생성 모드에서 무시됩니다.")
+            existing_df = None
+
+        preserved_df = pd.DataFrame()
+        if existing_df is not None and not existing_df.empty:
+            parsed_dates = existing_df['Date'].apply(parse_date)
+            outside_window_mask = ~parsed_dates.between(regen_start, regen_end, inclusive='both')
+            preserved_df = existing_df.loc[outside_window_mask].copy()
+
+        last_odo = INITIAL_START_ODOMETER
+        if not preserved_df.empty:
+            last_odo = float(preserved_df['End odometer*'].iloc[-1])
+        elif existing_df is not None and not existing_df.empty:
+            prior_rows = existing_df[existing_df['Date'].apply(parse_date) < regen_start].copy()
+            if not prior_rows.empty:
+                last_odo = float(prior_rows['End odometer*'].iloc[-1])
+
+        source_df = load_and_clean_base_data(BASE_EXPENSE_FILE, regen_start, regen_end)
+        target_km = float(source_df['Total Km'].sum()) if not source_df.empty else 200.0
+
+        new_df, _ = generate_incremental_trips(
+            start_date=regen_start,
+            end_date=regen_end,
+            needed_km=max(target_km, 50.0),
+            last_odometer=last_odo,
+            personal_budget=max(0.0, TOTAL_MILEAGE - target_business_km),
+            existing_dates=set()
+        )
+
+        final_df = pd.concat([preserved_df, new_df], ignore_index=True)
+
+    elif existing_df is not None and not existing_df.empty:
         print(f"✅ 기존 로그북({LOGBOOK_CSV}) 발견: 기존 {len(existing_df)}건 기록 보존")
         
         parsed_dates = existing_df['Date'].apply(parse_date)
@@ -462,7 +707,7 @@ def main():
 
     else:
         print("ℹ️ 기존 로그북 파일이 없어 최초 신규 생성을 진행합니다.")
-        base_df = load_and_clean_base_data(BASE_EXPENSE_FILE)
+        base_df = load_and_clean_base_data(BASE_EXPENSE_FILE, regen_start, regen_end)
         current_km = base_df['Total Km'].sum() if not base_df.empty else 0.0
         needed_km = target_business_km - current_km
 
@@ -472,8 +717,8 @@ def main():
             existing_dates_set = set(base_df['Date'].dt.strftime('%d/%m/%Y').tolist())
 
         new_df, _ = generate_incremental_trips(
-            start_date=INITIAL_START_DATE,
-            end_date=END_DATE,
+            start_date=regen_start,
+            end_date=regen_end,
             needed_km=needed_km,
             last_odometer=INITIAL_START_ODOMETER,
             personal_budget=personal_budget,
@@ -495,6 +740,9 @@ def main():
     for col in cols:
         if col not in final_df.columns:
             final_df[col] = ''
+    final_df['_sort_date'] = pd.to_datetime(final_df['Date'], format='%d/%m/%Y', errors='coerce')
+    final_df['_sort_start_odo'] = pd.to_numeric(final_df['Start odometer*'], errors='coerce').fillna(0)
+    final_df = final_df.sort_values(by=['_sort_date', '_sort_start_odo'], kind='mergesort').drop(columns=['_sort_date', '_sort_start_odo']).reset_index(drop=True)
     final_df = final_df[cols]
 
     final_df.to_csv(LOGBOOK_CSV, index=False)
