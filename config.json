@@ -14,7 +14,7 @@
     "multi_stop_probability": 0.60
   },
   "selective_regen": {
-    "enabled": true,
+    "enabled": false,
     "start_date": "2026-07-01",
     "end_date": "2026-07-31"
   },

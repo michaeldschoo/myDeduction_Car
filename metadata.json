@@ -1,6 +1,6 @@
 {
   "name": "CarLogbook",
-  "description": "",
+  "description": "ATO Compliant Vehicle Logbook and Expense Importer for FYN93N",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
