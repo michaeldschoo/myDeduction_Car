@@ -53,10 +53,18 @@ export default function App() {
               <a
                 href="/FYN93N_ATO_Logbook.csv"
                 download="FYN93N_ATO_Logbook.csv"
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 transition"
               >
-                <FileSpreadsheet className="w-4 h-4" />
-                단독 Logbook.csv
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                Logbook.csv
+              </a>
+              <a
+                href="/FYN93N_ATO_Logbook.xlsx"
+                download="FYN93N_ATO_Logbook.xlsx"
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs sm:text-sm font-medium bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                Logbook.xlsx (엑셀)
               </a>
             </div>
           </div>
