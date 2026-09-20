@@ -1,0 +1,18 @@
+Importing your myDeductions file will depend on where you have saved the file and the device you are using. The below steps can be used as a guide but may not cover every scenario.
+
+Apple - iOS
+
+1. Select file
+2. Select upload/open in another app
+3. Select open with/open in if applicable
+4. Select the ATO app from the list of apps to open the file with
+
+Note: Some apps may unzip the file when selected, in this case try pressing and holding the attachment for a few seconds until it gives you the option to open in another app.
+
+Android
+
+1. Select file
+2. Select share/open with if applicable
+3. Select the ATO app from the list of apps to open the file with
+
+Note: The file may automatically open in another app if you have previously selected this as a default app for these types of files to open with. You should be able to clear this default by going to Settings > Applications > selecting the app that the file is opening with > Clear defaults.
